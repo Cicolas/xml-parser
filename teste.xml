@@ -1,0 +1,19 @@
+<Page title="SSD">
+    <Section number="1" name="SSD">
+        <List type="Unordered">
+            <Text>Componentes:</Text>
+                <List type="Unordered">
+                    <Text>Controlador</Text>
+                    <Text>Memória flash</Text>
+                    <Text>RAM</Text>
+                </List>
+        </List>
+        
+        <br/>
+        <Text>
+            Não possui latência de rotação,
+            porém tem latencia de transferência; 
+            Além disso, o tempo de leitura é menor que o de escrita
+        </Text>
+    </Section>
+</Page>
