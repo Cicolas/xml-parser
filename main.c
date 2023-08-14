@@ -89,7 +89,6 @@ typedef struct {
 
 typedef enum {
     TAG,
-    ATTRIBUTE,
     TEXT
 } ElementsEnum;
 
@@ -197,16 +196,10 @@ void attrlist_add(AttributeList *list, Attribute attr) {
 Text *text_new(char *str) {
     Text *t = malloc(sizeof(Text));
     
-    t->text = malloc(sizeof(char) * strlen(str));
+    t->text = malloc(strlen(str) + 1);
     strcpy(t->text, str);
 
     return t;
-}
-
-void text_set(Text *t, char *str) {
-    t->text = realloc(t->text, strlen(str));
-
-    strcpy(t->text, str);
 }
 
 Element elem_new(ElementsEnum type, void *ptr) {
@@ -260,8 +253,10 @@ Symbol parse_xml_char(char c);
 Element parse_xml_file(char* path);
 void print_xml_element(Element *elem, int indentation);
 
-int main(void) {
-    Element root = parse_xml_file("teste.xml");
+int main(int argc, char *argv[]) {
+    if (argc < 2) RAISE("you need provide the file to read");
+
+    Element root = parse_xml_file(argv[1]);
     print_xml_element(&root, 0);
 
     return 0;
@@ -309,12 +304,14 @@ Element parse_xml_file(char *path) {
 
     while ((c = fgetc(fd)) != EOF) {
         if (comment) {
-            if (c == '-' && fgetc(fd) == '-') {
+            if (c == '-' && fgetc(fd) == '-') {                
                 if (fgetc(fd) != '>') RAISE("'--' not allowed in comments");
-                
+
                 comment = false;
                 tag_opened = false;
             }
+
+            continue;
         }
 
         sym = parse_xml_char(c);
@@ -445,7 +442,7 @@ Element parse_xml_file(char *path) {
 }
 
 void print_xml_element(Element *elem, int indentation) {
-    printf(indentify(indentation));
+    printf("%s", indentify(indentation));
 
     if (elem->type == TEXT) {
         printf("%s\n", elem->text.text);
@@ -464,7 +461,7 @@ void print_xml_element(Element *elem, int indentation) {
             print_xml_element(&tag->children[i], indentation + 1);
         }
 
-        printf(indentify(indentation));
+        printf("%s", indentify(indentation));
         printf("</%s>\n", tag->name);
     }
 }
