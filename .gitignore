@@ -1,3 +1,6 @@
 *.exe
 *.o
 .vscode/
+*.exp
+*.lib
+*.pdb
