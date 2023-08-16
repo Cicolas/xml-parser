@@ -4,12 +4,12 @@ static bool _string_check_realocation(String *s, unsigned int new_size);
 
 String string_from(char *str) {
     String s = {
+        malloc(STRING_BUFFER_SIZE),
         STRING_BUFFER_SIZE,
-        malloc(s.size),
     };
 
     string_set(&s, str);
-    
+
     return s;
 }
 
@@ -52,6 +52,10 @@ String *string_clear(String *s) {
     s->str[0] = '\0';
 
     return s;
+}
+
+void string_free(String *s) {
+    free(s->str);
 }
 
 bool string_equal(String s1, String s2) {

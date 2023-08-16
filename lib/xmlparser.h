@@ -29,7 +29,7 @@
     #define RAISE(...)           \
         {                        \
             LOG_OUT(__VA_ARGS__) \
-            assert(false);       \
+            exit(1);       \
         }
 #endif
 
@@ -56,7 +56,7 @@ typedef enum {
 
 typedef struct {
     SymbolsEnum type;
-    char value;   
+    char value;
 } Symbol;
 
 
@@ -75,11 +75,11 @@ typedef struct Text Text;
 
 struct Tag {
     String name;
-    
+
     int child_count;
     int child_size; // read-only
     Element *children;
-    
+
     int attr_count;
     Attribute *attrs;
 };
@@ -112,5 +112,6 @@ struct Element {
 
 Symbol parse_xml_char(char c);
 Element parse_xml_file(char* path);
+void elem_free(Element *elem);
 
 #endif

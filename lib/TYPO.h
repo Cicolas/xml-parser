@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
 
 #ifndef bool
     #define bool char
@@ -21,8 +22,8 @@
 #define STRING_BUFFER_SIZE 256
 
 typedef struct {
-    unsigned int size;
     char *str;
+    unsigned int size;
 } String;
 
 unsigned int string_len(String s);
@@ -40,6 +41,8 @@ String *string_append(String *s, char c);
 String *string_clear(String *s);
 
 bool string_equal(String s1, String s2);
+
+void string_free(String *s);
 
 char *string_to_arr(String s);
 

@@ -2,6 +2,10 @@
 
 #define CHUNK_SIZE 8
 
+static void attrlist_free(AttributeList *list);
+static Attribute attr_clone(Attribute attr);
+static void attr_free(Attribute *attr);
+
 // --Stack-------------------------------------------------------------------------------------------------------------------
 
 typedef struct StackNode StackNode;
@@ -37,7 +41,7 @@ static void strtrimr(char *str) {
 
 static Tag *tag_new(String name, AttributeList *attrs) {
     Tag *t = malloc(sizeof(Tag));
-    
+
     t->name = name;
 
     t->child_count = 0;
@@ -46,8 +50,13 @@ static Tag *tag_new(String name, AttributeList *attrs) {
 
     t->attr_count = attrs == NULL ? 0 : attrs->attr_count;
     t->attrs = malloc(sizeof(Attribute) * (t->attr_count));
-    if (attrs != NULL)
-        memcpy(t->attrs, attrs->attrs, sizeof(Attribute) * attrs->attr_count);
+
+    if (attrs != NULL) {
+        for (int i = 0; i < attrs->attr_count; i++) {
+            t->attrs[i] = attr_clone(attrs->attrs[i]);
+            attr_free(&attrs->attrs[i]);
+        }
+    }
 
     return t;
 }
@@ -55,13 +64,19 @@ static Tag *tag_new(String name, AttributeList *attrs) {
 static void tag_add_child(Tag *tag, Element elem) {
     if (tag->child_count >= tag->child_size) {
         LOG_OUT("children realocation (%i -> %i)", tag->child_size, tag->child_size + CHUNK_SIZE);
-        
+
         tag->child_size += CHUNK_SIZE;
         tag->children = realloc(tag->children, sizeof(Element) * tag->child_size);
         if (tag->children == NULL) RAISE("not enough memory to realocate?");
     }
-    
+
     tag->children[tag->child_count++] = elem;
+}
+
+static void tag_free(Tag *tag) {
+    free(tag->children);
+    free(tag->attrs);
+    string_free(&tag->name);
 }
 
 static Attribute attr_new(String name, String value) {
@@ -71,6 +86,15 @@ static Attribute attr_new(String name, String value) {
     attr.value = value;
 
     return attr;
+}
+
+static Attribute attr_clone(Attribute attr) {
+    return attr_new(string_clone(attr.name), string_clone(attr.value));
+}
+
+static void attr_free(Attribute *attr) {
+    string_free(&attr->name);
+    string_free(&attr->value);
 }
 
 static AttributeList *attrlist_new() {
@@ -91,20 +115,28 @@ static void attrlist_add(AttributeList *list, Attribute attr) {
         list->attrs = realloc(list->attrs, sizeof(Attribute) * list->attr_size);
         if (list->attrs == NULL) RAISE("not enough memory to realocate?");
     }
-    
+
     list->attrs[list->attr_count++] = attr;
+}
+
+static void attrlist_free(AttributeList *list) {
+    free(list->attrs);
 }
 
 static Text *text_new(String str) {
     Text *t = malloc(sizeof(Text));
-    
+
     t->text = str;
 
     return t;
 }
 
+static void text_free(Text *t) {
+    string_free(&t->text);
+}
+
 Element elem_new(ElementsEnum type, void *ptr) {
-    Element elem; 
+    Element elem;
     elem.type = type;
 
     switch (type) {
@@ -115,6 +147,24 @@ Element elem_new(ElementsEnum type, void *ptr) {
 
     free(ptr);
     return elem;
+}
+
+void elem_free(Element *elem) {
+    if (elem->type == TEXT) {
+        text_free(&elem->text);
+    } else if (elem->type == TAG) {
+        Tag *tag = &elem->tag;
+
+        for(int i = 0; i < tag->attr_count; i++) {
+            attr_free(&tag->attrs[i]);
+        }
+
+        for(int i = 0; i < tag->child_count; i++) {
+            elem_free(&tag->children[i]);
+        }
+
+        tag_free(tag);
+    }
 }
 
 // --Stack-------------------------------------------------------------------------------------------------------------------
@@ -134,14 +184,28 @@ static void stack(StackNode **node, Tag *tag) {
 
 static Tag *unstack(StackNode **node) {
     assert(*node != NULL);
+    StackNode *ref = *node;
 
-    Tag *tag = (*node)->tag;
-    *node = (*node)->next;
+    Tag *tag = ref->tag;
+    *node = ref->next;
+    free(ref);
 
     return tag;
 }
 
 // --------------------------------------------------------------------------------------------------------------------------
+
+static void free_all(String *buffer, String *tag_name, String *attr_name, AttributeList *attrs) {
+    string_free(buffer);
+    string_free(tag_name);
+    string_free(attr_name);
+
+    for (int i = 0; i < attrs->attr_count; i++) {
+        attr_free(&attrs->attrs[i]);
+    }
+    attrlist_free(attrs);
+    free(attrs);
+}
 
 Symbol parse_xml_char(char c) {
     switch (c) {
@@ -157,19 +221,19 @@ Symbol parse_xml_char(char c) {
 
     if (is_alphanumeric(c)) return (Symbol) { ALPHA_NUMERIC, c };
     if (is_space(c)) return (Symbol) { SPACE, c };
-    
+
     return (Symbol) { SYMBOL, c };
 }
 
 Element parse_xml_file(char *path) {
     FILE *fd;
     fd = fopen(path, "r");
-    if (fd == NULL) 
+    if (fd == NULL)
         RAISE("cannot open the file: %s", path);
 
     Symbol sym = {0};
     char c;
-    
+
     StackNode *node = NULL;
 
     bool is_ending_tag = false;
@@ -185,7 +249,7 @@ Element parse_xml_file(char *path) {
 
     while ((c = fgetc(fd)) != EOF) {
         if (comment) {
-            if (c == '-' && fgetc(fd) == '-') {                
+            if (c == '-' && fgetc(fd) == '-') {
                 if (fgetc(fd) != '>') RAISE("'--' not allowed in comments");
 
                 comment = false;
@@ -198,11 +262,11 @@ Element parse_xml_file(char *path) {
         sym = parse_xml_char(c);
 
         if (sym.type == OPEN) {
-            if (tag_opened) 
+            if (tag_opened)
                 RAISE("cannot open a tag inside another tag %s", buffer.str);
 
             tag_opened = true;
-            
+
             if (!string_len(buffer)) continue;
             if (node == NULL) RAISE("text before the first tag isnt valid");
 
@@ -220,13 +284,15 @@ Element parse_xml_file(char *path) {
 
             tag_opened = false;
             pending = false;
-            
+
             if (!is_ending_tag) {
-                if (!string_len(tag_name))
+                if (!string_len(tag_name)) {
+                    string_free(&tag_name);
                     tag_name = string_clone(buffer);
-                
+                }
+
                 stack(&node, tag_new(string_clone(tag_name), attrs));
-                
+
                 attrs->attr_count = 0;
             }
             else {
@@ -242,6 +308,8 @@ Element parse_xml_file(char *path) {
                         if (sym.type != SPACE) RAISE("found %c after end of xml", sym.value);
                     }
 
+                    fclose(fd);
+                    free_all(&buffer, &tag_name, &attr_name, attrs);
                     return elem_new(TAG, l);
                 }
 
@@ -253,13 +321,14 @@ Element parse_xml_file(char *path) {
         }
 
         else if (sym.type == ALPHA_NUMERIC || (sym.type == SYMBOL && !tag_opened)) {
-            if (!str_opened && !string_len(buffer) && !is_alpha(sym.value) && !(sym.value != '_')) 
+            if (!str_opened && !string_len(buffer) && !is_alpha(sym.value) && !(sym.value != '_'))
                 RAISE("names and attributes shouldn't start with numbers");
 
             if (pending && string_len(buffer)) {
                 if (is_ending_tag) RAISE("ending tag only needs to have name");
                 if (string_len(tag_name)) RAISE("invalid attribute declaration");
 
+                string_free(&tag_name);
                 tag_name = string_clone(buffer);
 
                 string_clear(&buffer);
@@ -270,25 +339,29 @@ Element parse_xml_file(char *path) {
         }
 
         else if (sym.type == SPACE) {
-            if (tag_opened && !str_opened && string_len(buffer) && !string_len(tag_name)) pending = true;
-            
-            if (!tag_opened && string_len(buffer) && buffer.str[string_len(buffer)-1] != ' ') string_append(&buffer, ' ');
-        } 
+            if (tag_opened && !str_opened && string_len(buffer) && !string_len(tag_name))
+                pending = true;
+
+            if (!tag_opened && string_len(buffer) && buffer.str[string_len(buffer)-1] != ' ')
+                string_append(&buffer, ' ');
+        }
 
         else if (sym.type == SLASH) {
             is_ending_tag = true;
-        
+
             if (string_len(buffer)) {
-                if (!string_len(tag_name))
+                if (!string_len(tag_name)) {
+                    string_free(&tag_name);
                     tag_name = string_clone(buffer);
-                
-                stack(&node, tag_new(tag_name, NULL));
+                }
+
+                stack(&node, tag_new(string_clone(tag_name), NULL));
             }
         }
 
         else if (sym.type == EQUALS) {
             if (is_ending_tag) RAISE("ending tag only needs to have name");
-            
+
             string_clear(&attr_name);
             string_concat(&attr_name, buffer);
             string_clear(&buffer);
@@ -312,10 +385,13 @@ Element parse_xml_file(char *path) {
         else if (sym.type == EXCLAMATION && tag_opened) {
             if (fgetc(fd) != '-' || fgetc(fd) != '-')
                 RAISE("bad comment");
-            
+
             comment = true;
         }
     }
+
+    fclose(fd);
+    free_all(&buffer, &tag_name, &attr_name, attrs);
 
     RAISE("reached EOF before end of <%s>", node->tag->name.str);
     return elem_new(0, NULL);
